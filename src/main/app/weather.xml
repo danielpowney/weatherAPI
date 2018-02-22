@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting" xmlns:validation="http://www.mulesoft.org/schema/mule/validation" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:ws="http://www.mulesoft.org/schema/mule/ws"
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+	<http:listener-config name="weather-httpListenerConfig"
+		host="0.0.0.0" port="8082" doc:name="HTTP Listener Configuration" />
+	<apikit:config name="weather-config" raml="weather.raml"
+		consoleEnabled="false" doc:name="Router" keepRamlBaseUri="false" />
+	<ws:consumer-config name="Docker_Web_Service_Consumer"
+		wsdlLocation="http://localhost:81/GlobalWeather?wsdl" service="GlobalWeather"
+		port="GlobalWeatherSoap" serviceAddress="http://localhost:81/GlobalWeather"
+		doc:name="Web Service Consumer" />
+	<ws:consumer-config name="Web_Service_Consumer"
+		wsdlLocation="http://www.webservicex.com/globalweather.asmx?wsdl"
+		service="GlobalWeather" port="GlobalWeatherSoap"
+		serviceAddress="http://www.webservicex.com/globalweather.asmx"
+		doc:name="Web Service Consumer" />
+    <validation:config name="Validation_Configuration" doc:name="Validation Configuration"/>
+
+    <flow name="weather-main">
+		<http:listener config-ref="weather-httpListenerConfig"
+			path="/weatherAPI/v1.0/*" doc:name="HTTP" />
+		<apikit:router config-ref="weather-config" doc:name="APIkit Router" />
+		<exception-strategy ref="weather-apiKitGlobalExceptionMapping"
+			doc:name="Reference Exception Strategy" />
+	</flow>
+    <flow name="weather-console">
+		<http:listener config-ref="weather-httpListenerConfig"
+			path="/console/*" doc:name="HTTP" />
+		<apikit:console config-ref="weather-config" doc:name="APIkit Console" />
+	</flow>
+    <flow name="get:/countries:weather-config">
+        <logger message="Logger 1a: #[payload]" level="DEBUG" doc:name="Logger 1a"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://www.webserviceX.NET
+---
+{
+	ns0#GetCitiesByCountry: {
+		ns0#CountryName: inboundProperties."http.uri.params".countryName default ""
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="Logger 2a: #[payload]" level="DEBUG" doc:name="Logger 2a"/>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="GetCitiesByCountry" doc:name="Web Service Consumer"/>
+        <logger message="Logger 3a: #[payload]" level="DEBUG" doc:name="Logger 3a"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="13b4e4b8-5cf3-4d20-9f39-fa91c5d8db57">
+            <dw:input-payload mimeType="application/xml"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+---
+{
+	GetCitiesByCountryResponse: {
+		GetCitiesByCountryResult: read(payload.GetCitiesByCountryResponse.GetCitiesByCountryResult, "application/xml")	
+	}
+}]]></dw:set-payload>
+            <dw:set-variable variableName="emptyNewDataSet"><![CDATA[%dw 1.0
+%output application/java
+---
+read(payload.GetCitiesByCountryResponse.GetCitiesByCountryResult, "application/xml").NewDataSet == '']]></dw:set-variable>
+        </dw:transform-message>
+        <logger message="Logger 4a: #[payload]" level="DEBUG" doc:name="Logger 4a"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.emptyNewDataSet]">
+                <set-property propertyName="Content-Type" value="application/json" doc:name="Set content type"/>
+                <set-property propertyName="http.status" value="404" doc:name="Set HTTP status"/>
+                <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" encoding="UTF-8" mimeType="application/json" doc:name="Set Payload"/>
+            </when>
+            <otherwise>
+                <dw:transform-message doc:name="Transform Message" metadata:id="32f60f29-e754-402e-8b52-cf71a73bacc7">
+                    <dw:input-payload doc:sample="sample_data\GetCitiesByCountryResponse_2.xml" mimeType="application/xml"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload.GetCitiesByCountryResponse.GetCitiesByCountryResult.NewDataSet.*Table map ((table , indexOfTable) -> {
+	countryName: table.Country,
+	cityName: table.City
+})]]></dw:set-payload>
+                    <dw:set-property propertyName="http.status"><![CDATA[%dw 1.0
+%output application/java
+---
+"200"]]></dw:set-property>
+                </dw:transform-message>
+            </otherwise>
+        </choice>
+        <logger message="Logger 5a" level="DEBUG" doc:name="Logger 5a"/>
+
+	</flow>
+    <flow name="get:/countries/{countryName}/cities/{cityName}:weather-config">
+        <logger message="Logger 1b: #[payload]" level="DEBUG" doc:name="Logger 1b"/>
+        <validation:all doc:name="Validation" config-ref="Validation_Configuration">
+            <validation:validations>
+                <validation:matches-regex value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.countryName)]" regex="^[0-9A-Za-z -]+$"/>
+                <validation:matches-regex value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.cityName)]" regex="^[0-9A-Za-z -]+$"/>
+                <validation:validate-size value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.countryName)]" min="0" max="50"/>
+                <validation:validate-size value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.cityName)]" min="0" max="50"/>
+            </validation:validations>
+        </validation:all>
+        <logger message="Logger 2b: #[payload]" level="DEBUG" doc:name="Logger 2b"/>
+        <dw:transform-message doc:name="Transform Message">
+        	<dw:input-payload mimeType="application/xml"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+%namespace ns0 http://www.webserviceX.NET
+---
+{
+	ns0#GetWeather: {
+		ns0#CityName: inboundProperties."http.uri.params".cityName default "",
+		ns0#CountryName: inboundProperties."http.uri.params".countryName default ""
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <logger message="Logger 3b: #[payload]" level="DEBUG" doc:name="Logger 3b"/>
+        <ws:consumer config-ref="Web_Service_Consumer" operation="GetWeather" doc:name="Web Service Consumer"/>
+        <set-payload value="&lt;GetWeatherResponse&gt; &lt;GetWeatherResult&gt;&lt;![CDATA[&lt;NewDataSet&gt;&lt;Location&gt;Melbourne&lt;/Location&gt;&lt;Time&gt;11 AM&lt;/Time&gt;&lt;Wind&gt;15 km per hour&lt;/Wind&gt;&lt;Visibility&gt;10 km&lt;/Visibility&gt;&lt;SkyConditions&gt;sunny&lt;/SkyConditions&gt;&lt;Temperature&gt;18&lt;/Temperature&gt;&lt;DewPoint&gt;2 C&lt;/DewPoint&gt;&lt;RelativeHumidity&gt;35&lt;/RelativeHumidity&gt;&lt;Status&gt;Normal&lt;/Status&gt;&lt;/NewDataSet&gt; ]]&gt;&lt;/GetWeatherResult&gt; &lt;/GetWeatherResponse&gt;" encoding="UTF-8" mimeType="application/xml" doc:name="Set Payload (See issues)"/>
+        <logger message="Logger 4b: #[payload]" level="INFO" doc:name="Logger 4b"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="ece65dda-9c59-49a4-bea5-781e27569f77">
+            <dw:input-payload mimeType="application/xml" doc:sample="sample_data\GetWeatherResponse_1.xml"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/xml
+---
+{
+	GetWeatherResponse: {
+		GetWeatherResult: read(payload.GetWeatherResponse.GetWeatherResult, "application/xml") when payload.GetWeatherResponse.GetWeatherResult != 'Data Not Found' otherwise 'Data Not Found'
+	}
+}]]></dw:set-payload>
+            <dw:set-variable variableName="emptyNewDataSet"><![CDATA[%dw 1.0
+%output application/java
+---
+payload.GetWeatherResponse.GetWeatherResult == 'Data Not Found']]></dw:set-variable>
+        </dw:transform-message>
+        <logger message="Logger 5b: #[flowVars.emptyNewDataSet]" level="INFO" doc:name="Logger 5b"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.emptyNewDataSet]">
+                <set-property propertyName="Content-Type" value="application/json" doc:name="Set content type"/>
+                <set-property propertyName="http.status" value="404" doc:name="Set HTTP status"/>
+                <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" encoding="UTF-8" mimeType="application/json" doc:name="Set Payload"/>
+            </when>
+            <otherwise>
+                <dw:transform-message doc:name="Transform Message" metadata:id="850ddb8d-bcad-4e33-aaec-685d370a5a0f">
+                    <dw:input-payload doc:sample="sample_data\GetWeatherResponse.xml" mimeType="application/xml"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+%namespace ns0 http://www.webserviceX.NET
+---
+{
+	location: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Location,
+	time: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Time,
+	wind: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Wind,
+	visibility: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Visibility,
+	skyConditions: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.SkyConditions,
+	temperature: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Temperature,
+	dewPoint: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.DewPoint,
+	relativeHumidity: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.RelativeHumidity,
+	status: payload.GetWeatherResponse.GetWeatherResult.NewDataSet.Status
+}]]></dw:set-payload>
+                </dw:transform-message>
+            </otherwise>
+        </choice>
+        <logger message="Logger 6b: #[payload]" level="DEBUG" doc:name="Logger 6b"/>
+
+
+	</flow>
+
+    <flow name="get:/countries/{countryName}:weather-config">
+        <validation:all config-ref="Validation_Configuration" doc:name="Validation">
+            <validation:validations>
+                <validation:matches-regex value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.countryName)]" regex="^[0-9A-Za-z -]+$"/>
+                <validation:validate-size value="#[java.net.URLDecoder.decode(message.inboundProperties.'http.uri.params'.countryName)]" min="0" max="50"/>
+            </validation:validations>
+        </validation:all>
+
+
+		<flow-ref name="get:/countries:weather-config" doc:name="Flow Reference" />
+
+	</flow>
+    <apikit:mapping-exception-strategy
+		name="weather-apiKitGlobalExceptionMapping">
+		<apikit:mapping statusCode="404">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.NotFoundException" />
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Set content type" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Resource not found&quot; }"
+				doc:name="Set Payload" encoding="UTF-8" mimeType="application/json"/>
+		</apikit:mapping>
+		<apikit:mapping statusCode="405">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Set content type" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Method not allowed&quot; }"
+				doc:name="Set Payload" encoding="UTF-8" mimeType="application/json"/>
+		</apikit:mapping>
+		<apikit:mapping statusCode="415">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Set content type" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }"
+				doc:name="Set Payload" encoding="UTF-8" mimeType="application/json"/>
+		</apikit:mapping>
+		<apikit:mapping statusCode="406">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Set content type" />
+			<set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }"
+				doc:name="Set Payload" encoding="UTF-8" mimeType="application/json"/>
+		</apikit:mapping>
+		<apikit:mapping statusCode="400">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.BadRequestException" />
+            <apikit:exception value="org.mule.extension.validation.api.ValidationException"/>
+            <apikit:exception value="org.mule.module.apikit.exception.InvalidUriParameterException"/>
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Set content type" />
+			<set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }"
+				doc:name="Set Payload" encoding="UTF-8" mimeType="application/json"/>
+		</apikit:mapping>
+        <apikit:mapping statusCode="500">
+            <apikit:exception value="java.lang.Exception"/>
+            <logger message="Logger exception: #[exception.message]" level="ERROR" doc:name="Logger"/>
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Set content type"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Unexpected error&quot; }" encoding="UTF-8" mimeType="application/json" doc:name="Set Payload"/>
+        </apikit:mapping>
+	</apikit:mapping-exception-strategy>
+</mule>
