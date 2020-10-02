@@ -1,7 +1,9 @@
 #%RAML 1.0
-title: "Weather API"
+title: Weather API
 baseUri: http://localhost:81/weatherAPI/v1.0
 version: 1.0
+mediaType: application/json
+
 types:
   Name:
     type: string
@@ -9,7 +11,7 @@ types:
     pattern: "^[0-9A-Za-z -]+$"
     maxLength: 50
 /countries:
-  description: Get all cities.,
+  description: Get all cities.
   get:
     responses :
       200:
